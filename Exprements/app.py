@@ -1,10 +1,11 @@
 import streamlit as st
 import requests
-import json
 import faiss
 import numpy as np
+import io
+import hashlib
 
-from pathlib import Path
+from pypdf import PdfReader
 from sentence_transformers import SentenceTransformer
 
 
@@ -15,154 +16,442 @@ from sentence_transformers import SentenceTransformer
 st.set_page_config(
     page_title="Company Document AI Assistant",
     page_icon="🤖",
-    layout="centered"
+    layout="wide"
 )
 
-st.title("🤖 Company Document AI Assistant")
+# Simple professional styling
 
-st.write(
-    "Ask questions about your company documents."
+st.markdown("""
+<style>
+.stApp {
+    background-color: #f7f9fc;
+}
+.block-container {
+    padding-top: 2rem;
+    max-width: 1100px;
+}
+.main-title {
+    font-size: 30px;
+    font-weight: 700;
+    color: #183153;
+}
+.sub-title {
+    color: #64748b;
+    font-size: 15px;
+}
+</style>
+""", unsafe_allow_html=True)
+
+
+# --------------------------------
+# 3. Text Chunking
+# --------------------------------
+
+def create_chunks(text, chunk_size=800, overlap=120):
+
+    text = " ".join(text.split())
+
+    chunks = []
+
+    start = 0
+
+    while start < len(text):
+
+        end = start + chunk_size
+
+        chunk = text[start:end]
+
+        if chunk.strip():
+            chunks.append(chunk)
+
+        start += chunk_size - overlap
+
+    return chunks
+
+
+# --------------------------------
+# 4. Process Uploaded PDFs
+# --------------------------------
+
+def process_pdfs(uploaded_files):
+
+    all_chunks = []
+
+    for uploaded_file in uploaded_files:
+
+        try:
+
+            pdf = PdfReader(
+                io.BytesIO(uploaded_file.getvalue())
+            )
+
+            for page_number, page in enumerate(
+                pdf.pages,
+                start=1
+            ):
+
+                text = page.extract_text() or ""
+
+                page_chunks = create_chunks(text)
+
+                for chunk in page_chunks:
+
+                    all_chunks.append({
+                        "text": chunk,
+                        "source": uploaded_file.name,
+                        "page": page_number
+                    })
+
+        except Exception as error:
+
+            st.warning(
+                f"Could not read {uploaded_file.name}: {error}"
+            )
+
+    if not all_chunks:
+        return None
+
+    # Generate embeddings
+
+    texts = [
+        item["text"] for item in all_chunks
+    ]
+
+    embeddings = embedding_model.encode(
+        texts,
+        convert_to_numpy=True,
+        normalize_embeddings=True
+    ).astype("float32")
+
+    # Create FAISS index
+
+    index = faiss.IndexFlatIP(
+        embeddings.shape[1]
+    )
+
+    index.add(embeddings)
+
+    return {
+        "chunks": all_chunks,
+        "index": index
+    }
+
+
+# --------------------------------
+# 5. Session State
+# --------------------------------
+
+if "messages" not in st.session_state:
+    st.session_state.messages = []
+
+if "document_data" not in st.session_state:
+    st.session_state.document_data = None
+
+if "document_hash" not in st.session_state:
+    st.session_state.document_hash = ""
+
+
+# --------------------------------
+# 6. Sidebar - PDF Upload
+# --------------------------------
+
+with st.sidebar:
+
+    st.title("📁 Documents")
+    if st.button("➕ New Chat", use_container_width=True):
+        st.session_state.messages = []
+        st.rerun()
+    uploaded_files = st.file_uploader(
+        "Upload your PDF files",
+        type=["pdf"],
+        accept_multiple_files=True
+    )
+
+    st.caption(
+        "You can upload one or multiple PDF documents."
+    )
+
+    if st.button("🗑️ Clear Chat", use_container_width=True):
+
+        st.session_state.messages = []
+
+        st.rerun()
+
+
+# --------------------------------
+# 7. Process New Documents
+# --------------------------------
+
+if uploaded_files:
+
+    current_hash = hashlib.sha256()
+
+    for file in uploaded_files:
+
+        current_hash.update(file.name.encode())
+        current_hash.update(file.getvalue())
+
+    current_hash = current_hash.hexdigest()
+
+    if current_hash != st.session_state.document_hash:
+
+        with st.spinner("Processing your PDF documents..."):
+
+            document_data = process_pdfs(uploaded_files)
+
+            st.session_state.document_data = document_data
+
+            st.session_state.document_hash = current_hash
+
+            st.session_state.messages = []
+
+        if document_data:
+
+            st.sidebar.success(
+                f"{len(uploaded_files)} PDF(s) processed successfully!"
+            )
+
+        else:
+
+            st.sidebar.warning(
+                "No readable text found in the uploaded PDFs."
+            )
+
+else:
+
+    if st.session_state.document_hash:
+
+        st.session_state.document_data = None
+        st.session_state.document_hash = ""
+        st.session_state.messages = []
+
+
+# --------------------------------
+# 8. Main Application Interface
+# --------------------------------
+
+st.markdown(
+    '<div class="main-title">🤖 Company Document AI Assistant</div>',
+    unsafe_allow_html=True
 )
 
-
-# --------------------------------
-# 2. Load Project Files
-# --------------------------------
-
-BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR.parent / "data&doc"
-
-with open(
-    DATA_DIR / "chunks.json",
-    "r",
-    encoding="utf-8"
-) as file:
-    chunks = json.load(file)
-
-index = faiss.read_index(
-    str(DATA_DIR / "faiss_index.bin")
+st.markdown(
+    '<div class="sub-title">Upload your company documents and ask questions in simple English.</div>',
+    unsafe_allow_html=True
 )
 
+st.divider()
 
-# --------------------------------
-# 3. Load Embedding Model
-# --------------------------------
 
-@st.cache_resource
-def load_embedding_model():
+if st.session_state.document_data:
 
-    return SentenceTransformer(
-        "all-MiniLM-L6-v2"
+    st.success("Your documents are ready. Ask your questions!")
+
+else:
+
+    st.info(
+        "👈 Upload a PDF document from the sidebar to get started."
     )
 
 
-embedding_model = load_embedding_model()
+# --------------------------------
+# 9. Display Chat History
+# --------------------------------
+
+for message in st.session_state.messages:
+
+    with st.chat_message(message["role"]):
+
+        st.write(message["content"])
+
+        if message["role"] == "assistant":
+
+            for source in message.get("sources", []):
+
+                with st.expander(
+                    f"📄 Source: {source['source']} | Page {source['page']}"
+                ):
+
+                    st.write(source["text"])
 
 
 # --------------------------------
-# 4. User Question
+# 10. User Question
 # --------------------------------
 
 question = st.chat_input(
-    "Ask your question here..."
+    "Ask a question about your documents..."
 )
 
 
 # --------------------------------
-# 5. RAG Pipeline
+# 11. RAG Pipeline
 # --------------------------------
 
 if question:
 
-    st.chat_message("user").write(question)
+    if not st.session_state.document_data:
 
-    with st.spinner("Searching company documents..."):
-
-        # Convert question into embedding
-
-        question_embedding = embedding_model.encode(
-            [question]
+        st.warning(
+            "Please upload a PDF document first."
         )
 
-        question_embedding = np.array(
-            question_embedding
-        ).astype("float32")
+    else:
 
+        st.session_state.messages.append({
+            "role": "user",
+            "content": question
+        })
 
-        # Retrieve relevant chunks
+        with st.chat_message("user"):
+            st.write(question)
 
-        distances, indices = index.search(
-            question_embedding,
-            k=2
-        )
+        with st.chat_message("assistant"):
 
-        retrieved_context = ""
+            with st.spinner("Searching documents and generating answer..."):
 
-        for idx in indices[0]:
+                try:
 
-            if idx != -1:
-                retrieved_context += (
-                    chunks[idx] + "\n\n"
-                )
+                    document_data = st.session_state.document_data
 
+                    index = document_data["index"]
 
-        # Prepare prompt
+                    chunks = document_data["chunks"]
 
-        prompt = f"""
-You are a company document assistant.
+                    # Convert question into embedding
 
-Answer using ONLY the provided context.
+                    question_embedding = embedding_model.encode(
+                        [question],
+                        convert_to_numpy=True,
+                        normalize_embeddings=True
+                    ).astype("float32")
 
-If the answer is not available in the context,
-say:
-"The information is not available in the document."
+                    # Search relevant chunks
 
-Keep the answer short and simple.
-Use maximum 3 bullet points.
+                    k = min(4, index.ntotal)
 
-Context:
-{retrieved_context}
+                    scores, indices = index.search(
+                        question_embedding,
+                        k
+                    )
 
-Question:
+                    retrieved_chunks = []
+
+                    for idx in indices[0]:
+
+                        if idx != -1:
+                            retrieved_chunks.append(
+                                chunks[idx]
+                            )
+
+                    # Prepare context
+
+                    context = ""
+
+                    for item in retrieved_chunks:
+
+                        context += f"""
+Source: {item['source']}
+Page: {item['page']}
+Content: {item['text']}
+
+"""
+
+                    # Prepare prompt
+
+                    prompt = f"""
+You are a helpful Company Document AI Assistant.
+
+Answer using ONLY the provided document context.
+
+Do not use outside knowledge.
+Do not guess or invent information.
+
+If the answer is not available in the context, say:
+"The information is not available in the uploaded documents."
+
+Keep the answer simple and clear.
+Use maximum 4 bullet points.
+
+Document Context:
+{context}
+
+User Question:
 {question}
 
 Answer:
 """
 
+                    # Generate answer using Ollama
 
-        # Generate answer using Ollama
+                    response = requests.post(
+                        "http://localhost:11434/api/generate",
 
-        try:
+                        json={
+                            "model": "qwen2.5:3b",
+                            "prompt": prompt,
+                            "stream": False,
+                            "options": {
+                                "temperature": 0.2,
+                                "num_predict": 200
+                            }
+                        },
 
-            response = requests.post(
-                "http://localhost:11434/api/generate",
+                        timeout=180
+                    )
 
-                json={
-                    "model": "qwen2.5:3b",
-                    "prompt": prompt,
-                    "stream": False,
+                    response.raise_for_status()
 
-                    "options": {
-                        "temperature": 0.2,
-                        "num_predict": 120
-                    }
-                },
+                    answer = response.json().get(
+                        "response",
+                        "No answer generated."
+                    ).strip()
 
-                timeout=180
-            )
+                    st.write(answer)
 
-            response.raise_for_status()
+                    # Display source information
 
-            result = response.json()
+                    unique_sources = []
 
-            answer = result["response"]
+                    seen = set()
 
-            st.chat_message("assistant").write(
-                answer
-            )
+                    for item in retrieved_chunks:
 
-        except requests.exceptions.RequestException as error:
+                        key = (
+                            item["source"],
+                            item["page"]
+                        )
 
-            st.error(
-                f"Unable to connect to Ollama: {error}"
-            )
+                        if key not in seen:
+
+                            seen.add(key)
+
+                            unique_sources.append(item)
+
+                    for source in unique_sources:
+
+                        with st.expander(
+                            f"📄 {source['source']} | Page {source['page']}"
+                        ):
+
+                            st.write(source["text"])
+
+                    # Save conversation
+
+                    st.session_state.messages.append({
+                        "role": "assistant",
+                        "content": answer,
+                        "sources": unique_sources
+                    })
+
+                except requests.exceptions.RequestException:
+
+                    st.error(
+                        "Unable to connect to Ollama. Please check whether Ollama is running."
+                    )
+
+                except Exception as error:
+
+                    st.error(
+                        f"Something went wrong: {error}"
+                    )
