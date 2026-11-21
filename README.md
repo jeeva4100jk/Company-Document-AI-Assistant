@@ -52,24 +52,6 @@ The application follows a Retrieval-Augmented Generation (RAG) workflow:
 8. Gemini generates an answer using the provided document context.
 9. The application displays the answer with source references.
 
-## Project Structure
-
-```text
-Company_Document_AI_Assistant/
-│
-├── Exprements/
-│   └── app.py
-│
-├── .streamlit/
-│   └── secrets.toml
-│
-├── requirements.txt
-├── .gitignore
-└── README.md
-```
-
-**Note:** The `.streamlit/secrets.toml` file contains the private API key and must not be uploaded to GitHub.
-
 ## Installation and Setup
 
 ### 1. Clone the Repository
