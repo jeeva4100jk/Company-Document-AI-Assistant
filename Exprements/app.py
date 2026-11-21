@@ -264,7 +264,7 @@ st.markdown(
 )
 
 st.caption(
-    "Powered by RAG • FAISS • Ollama • Qwen 2.5"
+    "Powered by RAG • FAISS • Sentence Transformers • Gemini"
 )
 
 st.divider()
@@ -410,30 +410,53 @@ User Question:
 Answer:
 """
 
-                    # Generate answer using Ollama
+                    # Generate answer using Gemini API
+
+                    api_key = st.secrets["GEMINI_API_KEY"]
 
                     response = requests.post(
-                        "http://localhost:11434/api/generate",
-
+                        "https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent",
+                        headers={
+                            "x-goog-api-key": api_key,
+                            "Content-Type": "application/json"
+                        },
                         json={
-                            "model": "qwen2.5:3b",
-                            "prompt": prompt,
-                            "stream": False,
-                            "options": {
+                            "contents": [
+                                {
+                                    "parts": [
+                                        {"text": prompt}
+                                    ]
+                                }
+                            ],
+                            "generationConfig": {
                                 "temperature": 0.2,
-                                "num_predict": 200
+                                "maxOutputTokens": 300
                             }
                         },
-
-                        timeout=180
+                        timeout=120
                     )
 
                     response.raise_for_status()
 
-                    answer = response.json().get(
-                        "response",
-                        "No answer generated."
+                    response_data = response.json()
+
+                    answer_parts = (
+                        response_data.get("candidates", [{}])[0]
+                        .get("content", {})
+                        .get("parts", [])
+                    )
+
+                    answer = " ".join(
+                        part.get("text", "")
+                        for part in answer_parts
+                        if part.get("text")
                     ).strip()
+
+                    if not answer:
+                        answer = (
+                            "Gemini could not generate an answer for this question. "
+                            "Please try asking in a different way."
+                        )
 
                     st.write(answer)
 
@@ -472,12 +495,30 @@ Answer:
                         "sources": unique_sources
                     })
 
-                except requests.exceptions.RequestException:
+                except requests.exceptions.HTTPError as error:
 
                     st.error(
-                        "Unable to connect to Ollama. "
-                        "The cloud app cannot directly access Ollama "
-                        "running on your personal laptop."
+                        "Gemini API request failed. "
+                        "Please check the API key, model availability, and API quota."
+                    )
+
+                    if error.response is not None:
+                        st.caption(
+                            f"API status: {error.response.status_code} — "
+                            f"{error.response.text[:500]}"
+                        )
+
+                except requests.exceptions.RequestException as error:
+
+                    st.error(
+                        f"Could not connect to the Gemini API: {error}"
+                    )
+
+                except KeyError:
+
+                    st.error(
+                        "Gemini API key not found. "
+                        "Please add GEMINI_API_KEY in Streamlit Cloud Secrets."
                     )
 
                 except Exception as error:
