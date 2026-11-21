@@ -10,6 +10,10 @@ Reading and searching through lengthy company documents manually can be time-con
 
 This project provides a simple solution where users can upload PDF documents, ask questions, and receive answers based on the document content, along with source page references.
 
+## 🚀 Live Demo
+
+[Try the Live Application](https://company-document-ai-assistant-bbrekuaoaq9mqjehrbucapp.streamlit.app/)
+
 ## Key Features
 
 - **PDF Upload:** Upload PDF documents through the Streamlit interface.
