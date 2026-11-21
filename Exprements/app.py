@@ -414,29 +414,48 @@ Answer:
 
                     api_key = st.secrets["GEMINI_API_KEY"]
 
-                    response = requests.post(
-                        "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.8-flash:generateContent",
-                        headers={
-                            "x-goog-api-key": api_key,
-                            "Content-Type": "application/json"
-                        },
-                        json={
-                            "contents": [
-                                {
-                                    "parts": [
-                                        {"text": prompt}
-                                    ]
-                                }
-                            ],
-                            "generationConfig": {
-                                "temperature": 0.2,
-                                "maxOutputTokens": 300
-                            }
-                        },
-                        timeout=120
-                    )
+                    import time
 
-                    response.raise_for_status()
+                    api_key = st.secrets["GEMINI_API_KEY"]
+                    
+                    for attempt in range(2):
+                        try:
+                            response = requests.post(
+                                "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+                                headers={
+                                    "x-goog-api-key": api_key,
+                                    "Content-Type": "application/json"
+                                },
+                                json={
+                                    "contents": [
+                                        {
+                                            "parts": [
+                                                {"text": prompt}
+                                            ]
+                                        }
+                                    ],
+                                    "generationConfig": {
+                                        "temperature": 0.2,
+                                        "maxOutputTokens": 300
+                                    }
+                                },
+                                timeout=120
+                            )
+                    
+                            # Retry if Gemini server is temporarily unavailable
+                            if response.status_code in [500, 502, 503, 504] and attempt == 0:
+                                time.sleep(5)
+                                continue
+                    
+                            response.raise_for_status()
+                            break
+                    
+                        except (requests.exceptions.Timeout,
+                                requests.exceptions.ConnectionError):
+                            if attempt == 0:
+                                time.sleep(5)
+                            else:
+                                raise
 
                     response_data = response.json()
 
