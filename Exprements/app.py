@@ -75,6 +75,7 @@ def create_chunks(text, chunk_size=800, overlap=120):
 
 def process_pdfs(uploaded_files):
 
+    embedding_model = load_embedding_model()
     all_chunks = []
 
     for uploaded_file in uploaded_files:
