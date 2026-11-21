@@ -19,7 +19,10 @@ st.set_page_config(
     layout="wide"
 )
 
-# Simple professional styling
+
+# --------------------------------
+# 2. Professional Styling
+# --------------------------------
 
 st.markdown("""
 <style>
@@ -44,7 +47,23 @@ st.markdown("""
 
 
 # --------------------------------
-# 3. Text Chunking
+# 3. Load Embedding Model
+# --------------------------------
+
+@st.cache_resource
+def load_embedding_model():
+
+    return SentenceTransformer(
+        "all-MiniLM-L6-v2"
+    )
+
+
+# IMPORTANT: Load model before processing PDFs
+embedding_model = load_embedding_model()
+
+
+# --------------------------------
+# 4. Text Chunking
 # --------------------------------
 
 def create_chunks(text, chunk_size=800, overlap=120):
@@ -70,12 +89,11 @@ def create_chunks(text, chunk_size=800, overlap=120):
 
 
 # --------------------------------
-# 4. Process Uploaded PDFs
+# 5. Process Uploaded PDFs
 # --------------------------------
 
 def process_pdfs(uploaded_files):
 
-    embedding_model = load_embedding_model()
     all_chunks = []
 
     for uploaded_file in uploaded_files:
@@ -139,7 +157,7 @@ def process_pdfs(uploaded_files):
 
 
 # --------------------------------
-# 5. Session State
+# 6. Session State
 # --------------------------------
 
 if "messages" not in st.session_state:
@@ -153,15 +171,19 @@ if "document_hash" not in st.session_state:
 
 
 # --------------------------------
-# 6. Sidebar - PDF Upload
+# 7. Sidebar - PDF Upload
 # --------------------------------
 
 with st.sidebar:
 
     st.title("📁 Documents")
+
     if st.button("➕ New Chat", use_container_width=True):
+
         st.session_state.messages = []
+
         st.rerun()
+
     uploaded_files = st.file_uploader(
         "Upload your PDF files",
         type=["pdf"],
@@ -180,7 +202,7 @@ with st.sidebar:
 
 
 # --------------------------------
-# 7. Process New Documents
+# 8. Process New Documents
 # --------------------------------
 
 if uploaded_files:
@@ -228,7 +250,7 @@ else:
 
 
 # --------------------------------
-# 8. Main Application Interface
+# 9. Main Application Interface
 # --------------------------------
 
 st.markdown(
@@ -239,6 +261,10 @@ st.markdown(
 st.markdown(
     '<div class="sub-title">Upload your company documents and ask questions in simple English.</div>',
     unsafe_allow_html=True
+)
+
+st.caption(
+    "Powered by RAG • FAISS • Ollama • Qwen 2.5"
 )
 
 st.divider()
@@ -256,7 +282,7 @@ else:
 
 
 # --------------------------------
-# 9. Display Chat History
+# 10. Display Chat History
 # --------------------------------
 
 for message in st.session_state.messages:
@@ -277,7 +303,7 @@ for message in st.session_state.messages:
 
 
 # --------------------------------
-# 10. User Question
+# 11. User Question
 # --------------------------------
 
 question = st.chat_input(
@@ -286,7 +312,7 @@ question = st.chat_input(
 
 
 # --------------------------------
-# 11. RAG Pipeline
+# 12. RAG Pipeline
 # --------------------------------
 
 if question:
@@ -341,6 +367,7 @@ if question:
                     for idx in indices[0]:
 
                         if idx != -1:
+
                             retrieved_chunks.append(
                                 chunks[idx]
                             )
@@ -448,7 +475,9 @@ Answer:
                 except requests.exceptions.RequestException:
 
                     st.error(
-                        "Unable to connect to Ollama. Please check whether Ollama is running."
+                        "Unable to connect to Ollama. "
+                        "The cloud app cannot directly access Ollama "
+                        "running on your personal laptop."
                     )
 
                 except Exception as error:
